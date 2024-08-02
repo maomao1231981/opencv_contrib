@@ -332,9 +332,9 @@ void FacemarkLBFImpl::training(void* parameters){
         CV_Error(Error::StsBadArg, "Training data is not provided. Consider to add using addTrainingSample() function!");
     }
 
-    if (params.cascade_face.empty() || (params.model_filename.empty() && params.save_model))
+    if (params.model_filename.empty() && params.save_model)
     {
-        CV_Error(Error::StsBadArg, "The parameter cascade_face and model_filename should be set!");
+        CV_Error(Error::StsBadArg, "The parameter model_filename should be set!");
     }
 
     // flip the image and swap the landmark position
@@ -535,13 +535,14 @@ Rect FacemarkLBFImpl::getBBox(Mat &img, const Mat_<double> shape) {
 void FacemarkLBFImpl::prepareTrainingData(Mat img, std::vector<Point2f> facePoints,
     std::vector<Mat> & cropped, std::vector<Mat> & shapes, std::vector<BBox> &boxes)
 {
+    Mat shape;
+    Mat _shape = Mat(facePoints).reshape(1);
+    Rect box = getBBox(img, _shape);
+
     if(img.channels()>1){
         cvtColor(img,img,COLOR_BGR2GRAY);
     }
 
-    Mat shape;
-    Mat _shape = Mat(facePoints).reshape(1);
-    Rect box = getBBox(img, _shape);
     if(box.x != -1){
         _shape.convertTo(shape, CV_64FC1);
         Mat sx = shape.col(0);
@@ -660,24 +661,22 @@ FacemarkLBFImpl::BBox::BBox(double _x, double _y, double w, double h) {
 
 // Project absolute shape to relative shape binding to this bbox
 Mat FacemarkLBFImpl::BBox::project(const Mat &shape) const {
-    Mat_<double> res(shape.rows, shape.cols);
-    const Mat_<double> &shape_ = (Mat_<double>)shape;
+    Mat res(shape.rows, shape.cols, CV_64FC1);
     for (int i = 0; i < shape.rows; i++) {
-        res(i, 0) = (shape_(i, 0) - x_center) / x_scale;
-        res(i, 1) = (shape_(i, 1) - y_center) / y_scale;
+        res.at<double>(i, 0) = (shape.at<double>(i, 0) - x_center) / x_scale;
+        res.at<double>(i, 1) = (shape.at<double>(i, 1) - y_center) / y_scale;
     }
-    return std::move(res);
+    return res;
 }
 
 // Project relative shape to absolute shape binding to this bbox
 Mat FacemarkLBFImpl::BBox::reproject(const Mat &shape) const {
-    Mat_<double> res(shape.rows, shape.cols);
-    const Mat_<double> &shape_ = (Mat_<double>)shape;
+    Mat res(shape.rows, shape.cols, CV_64FC1);
     for (int i = 0; i < shape.rows; i++) {
-        res(i, 0) = shape_(i, 0)*x_scale + x_center;
-        res(i, 1) = shape_(i, 1)*y_scale + y_center;
+        res.at<double>(i, 0) = shape.at<double>(i, 0)*x_scale + x_center;
+        res.at<double>(i, 1) = shape.at<double>(i, 1)*y_scale + y_center;
     }
-    return std::move(res);
+    return res;
 }
 
 Mat FacemarkLBFImpl::getMeanShape(std::vector<Mat> &gt_shapes, std::vector<BBox> &bboxes) {
@@ -996,7 +995,7 @@ void FacemarkLBFImpl::RandomForest::train(std::vector<Mat> &imgs, std::vector<Ma
 }
 
 Mat FacemarkLBFImpl::RandomForest::generateLBF(Mat &img, Mat &current_shape, BBox &bbox, Mat &mean_shape) {
-    Mat_<int> lbf_feat(1, landmark_n*trees_n);
+    Mat lbf_feat(1, landmark_n*trees_n, CV_32SC1);
     double scale;
     Mat_<double> rotate;
     calcSimilarityTransform(bbox.project(current_shape), mean_shape, scale, rotate);
@@ -1035,10 +1034,10 @@ Mat FacemarkLBFImpl::RandomForest::generateLBF(Mat &img, Mat &current_shape, BBo
                     idx = 2 * idx + 1;
                 }
             }
-            lbf_feat(i*trees_n + j) = (i*trees_n + j)*base + code;
+            lbf_feat.at<int>(i*trees_n + j) = (i*trees_n + j)*base + code;
         }
     }
-    return std::move(lbf_feat);
+    return lbf_feat;
 }
 
 void FacemarkLBFImpl::RandomForest::write(FileStorage fs, int k) {
@@ -1364,7 +1363,7 @@ Mat FacemarkLBFImpl::Regressor::supportVectorRegression(
 
 Mat FacemarkLBFImpl::Regressor::globalRegressionPredict(const Mat &lbf, int stage) {
     const Mat_<double> &weight = (Mat_<double>)gl_regression_weights[stage];
-    Mat_<double> delta_shape(weight.rows / 2, 2);
+    Mat delta_shape(weight.rows / 2, 2, CV_64FC1);
     const double *w_ptr = NULL;
     const int *lbf_ptr = lbf.ptr<int>(0);
 
@@ -1373,14 +1372,14 @@ Mat FacemarkLBFImpl::Regressor::globalRegressionPredict(const Mat &lbf, int stag
         w_ptr = weight.ptr<double>(2 * i);
         double y = 0;
         for (int j = 0; j < lbf.cols; j++) y += w_ptr[lbf_ptr[j]];
-        delta_shape(i, 0) = y;
+        delta_shape.at<double>(i, 0) = y;
 
         w_ptr = weight.ptr<double>(2 * i + 1);
         y = 0;
         for (int j = 0; j < lbf.cols; j++) y += w_ptr[lbf_ptr[j]];
-        delta_shape(i, 1) = y;
+        delta_shape.at<double>(i, 1) = y;
     }
-    return std::move(delta_shape);
+    return delta_shape;
 } // Regressor::globalRegressionPredict
 
 Mat FacemarkLBFImpl::Regressor::predict(Mat &img, BBox &bbox) {

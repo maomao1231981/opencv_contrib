@@ -148,8 +148,9 @@ static cv::Mat rgb2luv(const cv::Mat &src)
 
         lTable[i] = l*maxi;
     }
-    for (int i = 0; i < 40; ++i)
-        lTable.push_back(*--lTable.end());
+    for (int i = 0; i < 40; ++i) {
+        lTable.push_back(*lTable.rbegin());
+    }
 
     const int nchannels = 3;
 
@@ -830,7 +831,7 @@ protected:
         );
         #endif
 
-        cv::reduce( dstM.reshape(1, int( dstM.total() ) ), dstM, 2, CV_REDUCE_SUM);
+        cv::reduce( dstM.reshape(1, int( dstM.total() ) ), dstM, 2, REDUCE_SUM);
         imsmooth( dstM.reshape(1, dst.rows), 1 ).copyTo(dst);
     }
 
